@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import {
   getComplaints,
   addComplaint as storageAddComplaint,
+  addComplaintReport as storageAddComplaintReport,
   updateComplaint as storageUpdateComplaint,
   getQRCodes,
   saveQRCode,
@@ -34,7 +35,7 @@ export function ComplaintProvider({ children }) {
   }, [refreshData]);
 
   // Submit new complaint
-  const submitComplaint = (data, currentUser) => {
+  const submitComplaint = (data, currentUser, { allowSeparate = false } = {}) => {
     try {
       const priority = calculatePriority({
         category: data.category,
@@ -44,7 +45,7 @@ export function ComplaintProvider({ children }) {
         role: currentUser?.role || 'Student',
       });
 
-      const newComplaint = storageAddComplaint({
+      const result = storageAddComplaint({
         ...data,
         priority,
         submittedBy: {
@@ -54,14 +55,50 @@ export function ComplaintProvider({ children }) {
           role: currentUser?.role || 'Student',
           department: currentUser?.department || data.department,
         },
-      });
+      }, { allowSeparate });
+
+      if (result.duplicateCandidates.length > 0) {
+        return { success: false, duplicateCandidates: result.duplicateCandidates };
+      }
 
       refreshData();
-      showToast(`Complaint ${newComplaint.id} submitted successfully! Priority: ${priority}`, 'success');
-      return { success: true, complaint: newComplaint };
+      showToast(`Complaint ${result.complaint.id} submitted successfully! Priority: ${priority}`, 'success');
+      return { success: true, complaint: result.complaint };
     } catch (error) {
       console.error('Error submitting complaint:', error);
       showToast('Failed to submit complaint. Please try again.', 'error');
+      return { success: false, error };
+    }
+  };
+
+  const addComplaintReport = (complaintId, data, currentUser) => {
+    try {
+      const result = storageAddComplaintReport(complaintId, {
+        ...data,
+        submittedBy: {
+          id: currentUser?.id || 'ANONYMOUS',
+          name: currentUser?.name || 'Campus Student',
+          email: currentUser?.email || 'student@campus.edu',
+          role: currentUser?.role || 'Student',
+          department: currentUser?.department || data.department,
+        },
+      });
+
+      if (result.error) {
+        showToast(result.error, 'error');
+        return { success: false, error: result.error };
+      }
+
+      refreshData();
+      if (result.alreadyReported) {
+        showToast(`You have already reported complaint ${complaintId}.`, 'info');
+      } else {
+        showToast(`Your report was added to complaint ${complaintId}.`, 'success');
+      }
+      return { success: true, complaint: result.complaint, alreadyReported: result.alreadyReported };
+    } catch (error) {
+      console.error('Error adding complaint report:', error);
+      showToast('Failed to add your report. Please try again.', 'error');
       return { success: false, error };
     }
   };
@@ -176,6 +213,7 @@ export function ComplaintProvider({ children }) {
         toast,
         showToast,
         submitComplaint,
+        addComplaintReport,
         updateComplaint,
         assignStaffToComplaint,
         submitFeedback,

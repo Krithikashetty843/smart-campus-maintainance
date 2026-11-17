@@ -22,6 +22,7 @@ import CategoryIcon from '../../components/common/CategoryIcon';
 import ComplaintDetailModal from '../../components/complaints/ComplaintDetailModal';
 import { useAuth } from '../../context/AuthContext';
 import { useComplaints } from '../../context/ComplaintContext';
+import { getComplaintReportCount } from '../../services/storage';
 
 export default function StaffDashboard() {
   const { user } = useAuth();
@@ -198,6 +199,11 @@ export default function StaffDashboard() {
                     <h4 className="text-sm font-bold text-slate-900 hover:text-blue-600 transition">
                       {order.title}
                     </h4>
+                    {getComplaintReportCount(order) > 1 && (
+                      <div className="text-[10px] font-semibold text-indigo-600">
+                        Reported by {getComplaintReportCount(order)} students
+                      </div>
+                    )}
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
                       <span className="flex items-center gap-1 font-semibold text-slate-800">

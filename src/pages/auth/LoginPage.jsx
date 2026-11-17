@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Building2,
   Wrench,
@@ -25,6 +25,15 @@ import Modal from '../../components/common/Modal';
 export default function LoginPage() {
   const { login, getDashboardPath } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectTarget = new URLSearchParams(location.search).get('redirect');
+
+  const getSafeRedirectPath = (role) => {
+    if (redirectTarget && redirectTarget.startsWith('/')) {
+      return redirectTarget;
+    }
+    return getDashboardPath(role);
+  };
 
   const [selectedRoleTab, setSelectedRoleTab] = useState('Admin');
   const [email, setEmail] = useState('admin@campus.edu');
@@ -93,7 +102,7 @@ export default function LoginPage() {
 
     const res = login(profile.email, profile.pass);
     if (res.success) {
-      navigate(getDashboardPath(res.user.role));
+      navigate(getSafeRedirectPath(res.user.role), { replace: true });
     } else {
       setError(res.message);
     }
@@ -108,7 +117,7 @@ export default function LoginPage() {
     setLoading(false);
 
     if (res.success) {
-      navigate(getDashboardPath(res.user.role));
+      navigate(getSafeRedirectPath(res.user.role), { replace: true });
     } else {
       setError(res.message);
     }

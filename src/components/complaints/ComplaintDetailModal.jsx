@@ -21,7 +21,7 @@ import CategoryIcon from '../common/CategoryIcon';
 import ComplaintTimeline from './ComplaintTimeline';
 import { useAuth } from '../../context/AuthContext';
 import { useComplaints } from '../../context/ComplaintContext';
-import { getUsers } from '../../services/storage';
+import { getUsers, getComplaintReportCount, getComplaintReporters } from '../../services/storage';
 
 export default function ComplaintDetailModal({
   isOpen,
@@ -47,6 +47,12 @@ export default function ComplaintDetailModal({
 
   const allUsers = getUsers();
   const staffMembers = allUsers.filter(u => u.role === 'Maintenance Staff');
+  const reportCount = getComplaintReportCount(complaint);
+  const reporters = getComplaintReporters(complaint);
+  const reportHistory = complaint.reports || [{
+    submittedBy: complaint.submittedBy,
+    reportedAt: complaint.createdAt,
+  }];
 
   // Can this user modify status?
   const canModifyStatus =
@@ -183,6 +189,31 @@ export default function ComplaintDetailModal({
                     Pending assignment by Admin
                   </div>
                 )}
+              </div>
+            </div>
+
+            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-xs space-y-2">
+              <div className="font-bold text-indigo-900 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5" />
+                Reported by {reportCount} {reportCount === 1 ? 'student' : 'students'}
+              </div>
+              <div className="space-y-1.5">
+                {reporters.map((reporter) => {
+                  const report = reportHistory.find(
+                    (entry) => entry.submittedBy?.id === reporter.id ||
+                      entry.submittedBy?.email?.toLowerCase() === reporter.email?.toLowerCase()
+                  );
+                  return (
+                    <div key={reporter.id || reporter.email} className="flex items-center justify-between gap-2 text-slate-700">
+                      <span className="font-medium">{reporter.name || reporter.email}</span>
+                      {report?.reportedAt && (
+                        <time className="text-[10px] text-slate-500">
+                          {new Date(report.reportedAt).toLocaleString()}
+                        </time>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

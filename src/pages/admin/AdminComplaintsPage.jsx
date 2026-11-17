@@ -20,6 +20,7 @@ import CategoryIcon from '../../components/common/CategoryIcon';
 import ComplaintDetailModal from '../../components/complaints/ComplaintDetailModal';
 import { CATEGORIES, BUILDINGS, PRIORITIES } from '../../services/mockData';
 import { useComplaints } from '../../context/ComplaintContext';
+import { getComplaintReportCount, getComplaintReporters } from '../../services/storage';
 
 export default function AdminComplaintsPage() {
   const { complaints } = useComplaints();
@@ -44,7 +45,9 @@ export default function AdminComplaintsPage() {
       c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.room.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.submittedBy?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+      getComplaintReporters(c).some((reporter) =>
+        reporter.name?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
 
     const matchesStatus = statusFilter === 'ALL' || c.status === statusFilter;
     const matchesCategory = categoryFilter === 'ALL' || c.category === categoryFilter;
@@ -57,7 +60,7 @@ export default function AdminComplaintsPage() {
   });
 
   const exportToCSV = () => {
-    const headers = ['Ticket ID', 'Title', 'Category', 'Priority', 'Status', 'Building', 'Floor', 'Room', 'Reported By', 'Assigned To', 'Date'];
+    const headers = ['Ticket ID', 'Title', 'Category', 'Priority', 'Status', 'Building', 'Floor', 'Room', 'Reported By', 'Report Count', 'Assigned To', 'Date'];
     const rows = filteredComplaints.map((c) => [
       c.id,
       `"${c.title.replace(/"/g, '""')}"`,
@@ -68,6 +71,7 @@ export default function AdminComplaintsPage() {
       c.floor,
       `"${c.room}"`,
       `"${c.submittedBy?.name || 'N/A'}"`,
+      getComplaintReportCount(c),
       `"${c.assignedTo?.name || 'Unassigned'}"`,
       new Date(c.createdAt).toLocaleDateString(),
     ]);
@@ -231,8 +235,13 @@ export default function AdminComplaintsPage() {
                       <td className="py-3 px-4 font-mono font-semibold text-blue-700">
                         {c.id}
                       </td>
-                      <td className="py-3 px-4 font-medium text-slate-800 max-w-[200px] truncate">
-                        {c.title}
+                      <td className="py-3 px-4 font-medium text-slate-800 max-w-[200px]">
+                        <div className="truncate">{c.title}</div>
+                        {getComplaintReportCount(c) > 1 && (
+                          <div className="mt-1 text-[10px] font-semibold text-indigo-600">
+                            Reported by {getComplaintReportCount(c)} students
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5 text-slate-600">

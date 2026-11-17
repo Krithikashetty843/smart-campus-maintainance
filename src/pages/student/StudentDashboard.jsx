@@ -27,6 +27,7 @@ import FeedbackModal from '../../components/complaints/FeedbackModal';
 import QRScannerModal from '../../components/qr/QRScannerModal';
 import { useAuth } from '../../context/AuthContext';
 import { useComplaints } from '../../context/ComplaintContext';
+import { getComplaintReportCount, getComplaintReporters } from '../../services/storage';
 
 export default function StudentDashboard() {
   const { user } = useAuth();
@@ -46,9 +47,11 @@ export default function StudentDashboard() {
 
   // Filter complaints submitted by this student (or related demo student)
   const myComplaints = complaints.filter(
-    (c) =>
-      c.submittedBy?.id === user?.id ||
-      c.submittedBy?.email?.toLowerCase() === user?.email?.toLowerCase()
+    (c) => getComplaintReporters(c).some(
+      (reporter) =>
+        reporter.id === user?.id ||
+        reporter.email?.toLowerCase() === user?.email?.toLowerCase()
+    )
   );
 
   // Metrics
@@ -252,8 +255,13 @@ export default function StudentDashboard() {
                       <td className="py-3 px-4 font-mono font-semibold text-blue-700">
                         {c.id}
                       </td>
-                      <td className="py-3 px-4 font-medium text-slate-800 max-w-[220px] truncate">
-                        {c.title}
+                      <td className="py-3 px-4 font-medium text-slate-800 max-w-[220px]">
+                        <div className="truncate">{c.title}</div>
+                        {getComplaintReportCount(c) > 1 && (
+                          <div className="mt-1 text-[10px] font-semibold text-indigo-600">
+                            Reported by {getComplaintReportCount(c)} students
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5 text-slate-600">

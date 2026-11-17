@@ -9,9 +9,11 @@ import {
   Layers,
   DoorClosed,
   Sparkles,
+  Users,
 } from 'lucide-react';
 import Modal from '../common/Modal';
 import PriorityBadge from '../common/PriorityBadge';
+import StatusBadge from '../common/StatusBadge';
 import { CATEGORIES, DEPARTMENTS, BUILDINGS } from '../../services/mockData';
 import { calculatePriority } from '../../services/priorityCalculator';
 import { useComplaints } from '../../context/ComplaintContext';
@@ -19,7 +21,7 @@ import { useAuth } from '../../context/AuthContext';
 
 export default function ComplaintFormModal({ isOpen, onClose, initialLocation = null, onSuccess }) {
   const { user } = useAuth();
-  const { submitComplaint } = useComplaints();
+  const { submitComplaint, addComplaintReport } = useComplaints();
 
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState(CATEGORIES[0]);
@@ -35,6 +37,9 @@ export default function ComplaintFormModal({ isOpen, onClose, initialLocation = 
   const [imagePreview, setImagePreview] = useState(null);
   const [fileError, setFileError] = useState('');
   const [calculatedPriority, setCalculatedPriority] = useState('Medium');
+  const [duplicateCandidates, setDuplicateCandidates] = useState([]);
+  const [pendingComplaintData, setPendingComplaintData] = useState(null);
+  const [duplicateError, setDuplicateError] = useState('');
 
   // Update whenever initialLocation changes (e.g. from QR scan)
   useEffect(() => {
@@ -60,7 +65,19 @@ export default function ComplaintFormModal({ isOpen, onClose, initialLocation = 
 
   const currentBuildingObj = BUILDINGS.find(b => b.name === building) || BUILDINGS[0];
 
+  const clearDuplicateMatches = () => {
+    setDuplicateCandidates([]);
+    setPendingComplaintData(null);
+    setDuplicateError('');
+  };
+
+  const updateFormField = (setter, value) => {
+    clearDuplicateMatches();
+    setter(value);
+  };
+
   const handleBuildingChange = (newBldg) => {
+    clearDuplicateMatches();
     setBuilding(newBldg);
     const b = BUILDINGS.find(item => item.name === newBldg);
     if (b) {
@@ -70,6 +87,7 @@ export default function ComplaintFormModal({ isOpen, onClose, initialLocation = 
   };
 
   const handleImageChange = (e) => {
+    clearDuplicateMatches();
     setFileError('');
     const file = e.target.files?.[0];
     if (!file) return;
@@ -94,42 +112,105 @@ export default function ComplaintFormModal({ isOpen, onClose, initialLocation = 
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const getComplaintData = () => ({
+    title: title.trim(),
+    category,
+    department,
+    building,
+    floor,
+    room,
+    description: description.trim(),
+    image: imagePreview,
+  });
 
-    if (!title.trim() || !description.trim()) {
-      alert('Please fill in both the title and detailed description.');
-      return;
-    }
-
-    const result = submitComplaint(
-      {
-        title: title.trim(),
-        category,
-        department,
-        building,
-        floor,
-        room,
-        description: description.trim(),
-        image: imagePreview,
-      },
-      user
-    );
-
+  const finishSubmission = (result) => {
     if (result.success) {
-      // Reset form
       setTitle('');
       setDescription('');
       setImagePreview(null);
       setFileError('');
+      clearDuplicateMatches();
       if (onSuccess) onSuccess(result.complaint);
       onClose();
     }
   };
 
+  const handleSubmit = (e) => {
+    e.preventDefault();
+
+    if (!title.trim() || !description.trim()) {
+      setDuplicateError('Please fill in both the title and detailed description.');
+      return;
+    }
+
+    const data = getComplaintData();
+    const result = submitComplaint(data, user);
+    if (result.duplicateCandidates?.length) {
+      setPendingComplaintData(data);
+      setDuplicateCandidates(result.duplicateCandidates);
+      setDuplicateError('');
+      return;
+    }
+    finishSubmission(result);
+  };
+
+  const handleAddReport = (complaint) => {
+    if (!pendingComplaintData) return;
+    const result = addComplaintReport(complaint.id, pendingComplaintData, user);
+    if (result.success) finishSubmission(result);
+    else setDuplicateError(result.error || 'Unable to add this report to the existing complaint.');
+  };
+
+  const handleSubmitAsSeparate = () => {
+    if (!pendingComplaintData) return;
+    const result = submitComplaint(pendingComplaintData, user, { allowSeparate: true });
+    finishSubmission(result);
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Submit Campus Maintenance Complaint" maxWidth="max-w-2xl">
       <form onSubmit={handleSubmit} className="space-y-4">
+        {duplicateCandidates.length > 0 && (
+          <section className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-4" aria-live="polite">
+            <div>
+              <p className="text-sm font-bold text-amber-900">
+                A similar unresolved complaint already exists for this location.
+              </p>
+              <p className="mt-1 text-xs text-amber-800">
+                If it is the same issue, add your report to its existing ticket. If it is a different issue, create a separate ticket.
+              </p>
+            </div>
+            {duplicateCandidates.map((complaint) => (
+              <div key={complaint.id} className="rounded-lg border border-amber-200 bg-white p-3 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-mono font-bold text-blue-700">{complaint.id}</div>
+                  <StatusBadge status={complaint.status} />
+                </div>
+                <h4 className="mt-1 font-bold text-slate-900">{complaint.title}</h4>
+                <p className="mt-1 text-slate-600">{complaint.description}</p>
+                <div className="mt-2 text-slate-500">
+                  {complaint.category} · {complaint.department} · {complaint.building}, {complaint.floor}, {complaint.room}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleAddReport(complaint)}
+                  className="mt-3 rounded-lg bg-blue-600 px-3 py-2 font-bold text-white hover:bg-blue-700"
+                >
+                  This is the same issue — add my report
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={handleSubmitAsSeparate}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400 bg-white px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100"
+            >
+              <Users className="h-3.5 w-3.5" />
+              Different issue — submit a separate complaint
+            </button>
+          </section>
+        )}
+        {duplicateError && <p role="alert" className="text-xs font-medium text-rose-700">{duplicateError}</p>}
         {initialLocation && (
           <div className="flex items-center gap-2 p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900">
             <DoorClosed className="w-4 h-4 text-blue-600 shrink-0" />
@@ -150,7 +231,7 @@ export default function ComplaintFormModal({ isOpen, onClose, initialLocation = 
             required
             placeholder="e.g. Broken laboratory faucet or Short circuit in switchboard"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => updateFormField(setTitle, e.target.value)}
             className="w-full text-xs rounded-lg border border-slate-300 p-2.5 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -163,7 +244,7 @@ export default function ComplaintFormModal({ isOpen, onClose, initialLocation = 
             </label>
             <select
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={(e) => updateFormField(setCategory, e.target.value)}
               className="w-full text-xs rounded-lg border border-slate-300 p-2.5 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500"
             >
               {CATEGORIES.map((cat) => (
@@ -180,7 +261,7 @@ export default function ComplaintFormModal({ isOpen, onClose, initialLocation = 
             </label>
             <select
               value={department}
-              onChange={(e) => setDepartment(e.target.value)}
+              onChange={(e) => updateFormField(setDepartment, e.target.value)}
               className="w-full text-xs rounded-lg border border-slate-300 p-2.5 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500"
             >
               {DEPARTMENTS.map((dept) => (
@@ -217,7 +298,7 @@ export default function ComplaintFormModal({ isOpen, onClose, initialLocation = 
             </label>
             <select
               value={floor}
-              onChange={(e) => setFloor(e.target.value)}
+              onChange={(e) => updateFormField(setFloor, e.target.value)}
               className="w-full text-xs rounded-lg border border-slate-300 p-2 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500"
             >
               {currentBuildingObj.floors.map((fl) => (
@@ -236,7 +317,7 @@ export default function ComplaintFormModal({ isOpen, onClose, initialLocation = 
               type="text"
               required
               value={room}
-              onChange={(e) => setRoom(e.target.value)}
+              onChange={(e) => updateFormField(setRoom, e.target.value)}
               placeholder="e.g. Room 201"
               className="w-full text-xs rounded-lg border border-slate-300 p-2 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500"
             />
@@ -253,7 +334,7 @@ export default function ComplaintFormModal({ isOpen, onClose, initialLocation = 
             rows={3}
             placeholder="Describe the issue, exact equipment affected, whether it creates a safety hazard, or blocks student classes..."
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => updateFormField(setDescription, e.target.value)}
             className="w-full text-xs rounded-lg border border-slate-300 p-2.5 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -327,6 +408,7 @@ export default function ComplaintFormModal({ isOpen, onClose, initialLocation = 
           </button>
           <button
             type="submit"
+            disabled={duplicateCandidates.length > 0}
             className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition"
           >
             <Send className="w-3.5 h-3.5" />

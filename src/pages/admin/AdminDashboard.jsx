@@ -27,6 +27,7 @@ import {
 import ComplaintDetailModal from '../../components/complaints/ComplaintDetailModal';
 import { useAuth } from '../../context/AuthContext';
 import { useComplaints } from '../../context/ComplaintContext';
+import { getComplaintReportCount } from '../../services/storage';
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -186,6 +187,11 @@ export default function AdminDashboard() {
                       </span>
                     </div>
                     <div className="text-xs font-semibold text-slate-800">{c.title}</div>
+                    {getComplaintReportCount(c) > 1 && (
+                      <div className="text-[10px] font-semibold text-indigo-600">
+                        Reported by {getComplaintReportCount(c)} students
+                      </div>
+                    )}
                     <div className="text-[11px] text-slate-500">
                       {c.room} • {c.building}
                     </div>

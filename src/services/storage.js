@@ -108,15 +108,67 @@ export function saveComplaints(complaints) {
   setToStorage(COMPLAINTS_KEY, complaints);
 }
 
+const UNRESOLVED_STATUSES = new Set(['Pending', 'Assigned', 'In Progress', 'Reopened']);
+
+function normalizeMatchValue(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function hasSameLocationAndCategory(complaint, data) {
+  return ['department', 'building', 'floor', 'room', 'category'].every(
+    (field) => normalizeMatchValue(complaint[field]) === normalizeMatchValue(data[field])
+  );
+}
+
+function getReporterKey(reporter) {
+  return normalizeMatchValue(reporter?.id || reporter?.email);
+}
+
+export function getComplaintReporters(complaint) {
+  const reporters = [
+    ...(complaint?.reports || []).map((report) => report.submittedBy),
+    ...(complaint?.reporters || []),
+    complaint?.submittedBy,
+  ].filter(Boolean);
+  const seen = new Set();
+  return reporters.filter((reporter) => {
+    const key = getReporterKey(reporter);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function getComplaintReportCount(complaint) {
+  return getComplaintReporters(complaint).length;
+}
+
 export function generateComplaintId() {
   const randomSuffix = Math.floor(1000 + Math.random() * 9000);
   return `CMP-2026-${randomSuffix}`;
 }
 
-export function addComplaint(complaintData) {
+export function addComplaint(complaintData, { allowSeparate = false } = {}) {
   const complaints = getComplaints();
+  const duplicateCandidates = complaints.filter(
+    (complaint) =>
+      UNRESOLVED_STATUSES.has(complaint.status) &&
+      hasSameLocationAndCategory(complaint, complaintData)
+  );
+
+  if (duplicateCandidates.length > 0 && !allowSeparate) {
+    return { duplicateCandidates };
+  }
+
   const id = generateComplaintId();
   const now = new Date().toISOString();
+  const firstReport = {
+    submittedBy: complaintData.submittedBy,
+    title: complaintData.title,
+    description: complaintData.description,
+    image: complaintData.image || null,
+    reportedAt: now,
+  };
 
   const newComplaint = {
     id,
@@ -136,12 +188,74 @@ export function addComplaint(complaintData) {
         updatedBy: complaintData.submittedBy?.name || 'User',
       },
     ],
+    reports: [firstReport],
+    reporters: [complaintData.submittedBy],
+    reportCount: 1,
     ...complaintData,
   };
 
   const updated = [newComplaint, ...complaints];
   saveComplaints(updated);
-  return newComplaint;
+  return { complaint: newComplaint, duplicateCandidates: [] };
+}
+
+export function addComplaintReport(id, reportData) {
+  const complaints = getComplaints();
+  const index = complaints.findIndex((complaint) => complaint.id === id);
+  if (index === -1) return { error: 'Complaint not found.' };
+
+  const complaint = complaints[index];
+  if (
+    !UNRESOLVED_STATUSES.has(complaint.status) ||
+    !hasSameLocationAndCategory(complaint, reportData)
+  ) {
+    return { error: 'This complaint is no longer available for additional reports.' };
+  }
+
+  const reporters = getComplaintReporters(complaint);
+  const reporterKey = getReporterKey(reportData.submittedBy);
+  if (reporters.some((reporter) => getReporterKey(reporter) === reporterKey)) {
+    return { complaint, alreadyReported: true };
+  }
+
+  const now = new Date().toISOString();
+  const reports = [
+    ...(complaint.reports || [{
+      submittedBy: complaint.submittedBy,
+      title: complaint.title,
+      description: complaint.description,
+      image: complaint.image || null,
+      reportedAt: complaint.createdAt,
+    }]),
+    {
+      submittedBy: reportData.submittedBy,
+      title: reportData.title,
+      description: reportData.description,
+      image: reportData.image || null,
+      reportedAt: now,
+    },
+  ];
+  const updatedComplaint = {
+    ...complaint,
+    reports,
+    reporters: [...reporters, reportData.submittedBy],
+    reportCount: reporters.length + 1,
+    timeline: [
+      ...(complaint.timeline || []),
+      {
+        status: complaint.status,
+        title: 'Additional report received',
+        note: `Reported by ${reportData.submittedBy?.name || 'a student'}; grouped under the existing ticket.`,
+        timestamp: now,
+        updatedBy: reportData.submittedBy?.name || 'User',
+      },
+    ],
+    updatedAt: now,
+  };
+
+  complaints[index] = updatedComplaint;
+  saveComplaints(complaints);
+  return { complaint: updatedComplaint, alreadyReported: false };
 }
 
 export function updateComplaint(id, updates) {
